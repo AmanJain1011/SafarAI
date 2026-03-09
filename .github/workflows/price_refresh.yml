@@ -1,0 +1,50 @@
+name: Weekly Price Refresh
+
+# हर सोमवार सुबह 6 बजे IST (12:30 AM UTC) — या मैन्युअल रूप से चलाएं
+# Runs every Monday at 6 AM IST (12:30 AM UTC), or manually via workflow_dispatch.
+on:
+  schedule:
+    - cron: "30 0 * * 1"
+  workflow_dispatch:
+
+jobs:
+  refresh-prices:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download spaCy model
+        run: python -m spacy download en_core_web_sm
+
+      - name: Run OSM scraper (no API key needed)
+        env:
+          OPENTRIPMAP_API_KEY: ${{ secrets.OPENTRIPMAP_API_KEY }}
+          FOURSQUARE_API_KEY: ${{ secrets.FOURSQUARE_API_KEY }}
+          MAKCORPS_API_KEY: ${{ secrets.MAKCORPS_API_KEY }}
+        run: python -m src.scrapers.osm_attractions
+
+      - name: Commit updated data if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/data/
+          if git diff --cached --quiet; then
+            echo "No data changes — skipping commit."
+          else
+            git commit -m "chore: weekly price/data refresh [skip ci]"
+            git push
+          fi
